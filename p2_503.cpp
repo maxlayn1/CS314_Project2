@@ -188,11 +188,10 @@ void bather_critical_section(int bather_id, int sync_sem_id, int SAFETY, int MUT
 {
     cout << "A" << bather_id<< " is born ..." << endl;
     cout << "A" << bather_id<< " is waiting for other children to be active ..." << endl;
-    // Wait for the parent to signal
-    sem_op(sync_sem_id, -1);
+    sem_op(sync_sem_id, -1); // Wait for the parent to signal
     cout << "A" << bather_id << " starts working now ..." << endl;
 
-    while (p_shm->boiler_done_counter != NUMBER_OF_BOILERMEN)
+    while (p_shm->boiler_done_counter != NUMBER_OF_BOILERMEN) // bathers should not terminate until boilers do
     {
         sem_op(MUTEX, -1);                     // wait
         p_shm->ba_count = p_shm->ba_count + 1; // increment the number of bathers in the swimming pool
@@ -213,7 +212,7 @@ void bather_critical_section(int bather_id, int sync_sem_id, int SAFETY, int MUT
         {
             sem_op(SAFETY, 1); // signal
         }
-        cout << "A" << bather_id << " is leaving the swimming pool.." << endl;
+        cout << "\tA" << bather_id << " is leaving the swimming pool.." << endl;
         sem_op(MUTEX, 1); // signal
         // the critical section ends here --------------------
 

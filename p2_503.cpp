@@ -8,7 +8,7 @@
  *                                                            *
  * ********************************************************** */
 
-#define NUM_REPEAT 50 // each boiler-man repeats
+#define NUM_REPEAT 10 // each boiler-man repeats
 
 #define BATHER_TIME_01_A 300000 // 300000us = 0.3 seconds
 #define BATHER_TIME_01_B 800000 // 800000us = 0.8 seconds
@@ -23,7 +23,7 @@
 #define BOILERMAN_TIME_01_B 1600000 // 1600000us = 1.6 seconds
 
 #define BOILERMAN_TIME_02_A 1200000 // 1200000us = 1.2 seconds
-#define BOLIERMAN_TIME_02_B 1600000 // 1600000us = 1.6 seconds
+#define BOILERMAN_TIME_02_B 1600000 // 1600000us = 1.6 seconds
 
 #define SAFEGUARD_TIME_A 1200000 // 1200000us = 1.2 seconds
 #define SAFEGUARD_TIME_B 1600000 // 1600000us = 1.6 seconds
@@ -64,11 +64,11 @@
 using namespace std;
 
 // function prototypes
-void bather_critical_section(int bather_id, int sync_sem_id);
-void boilerman_critical_section(int boilerman_id, int sync_sem_id);
-void safeguard_critical_section(int safeguard_id, int sync_sem_id);
+void bather_critical_section(int bather_id, int sync_sem_id, int safety_sem_id, int mutex_sem_id);
+void boilerman_critical_section(int boilerman_id, int sync_sem_id, int safety_sem_id, int mutex_sem_id);
+void safeguard_critical_section(int safeguard_id, int sync_sem_id, int safety_sem_id, int mutex_sem_id);
 
-void sem_op(int sem_id, int sem_num, int op);
+void sem_op(int sem_id, short op);
 void delete_semaphore(int sem_id);
 
 int create_shared_mem();
@@ -100,34 +100,49 @@ int main()
     shm_id = create_shared_mem();      // create the shared memory
     p_shm = attach_shared_mem(shm_id); // attach the shared memory
 
-    // Access or create the semaphore set with a predefined key
-    int sem_id = semget(SEMAPHORE_KEY_1, 1, 0666 | IPC_CREAT);
-    if (sem_id == -1)
-    {
-        perror("semget failed");
-        return 1;
-    }
-
-    union semun sem_union;
-    sem_union.val = 1; // Initial value set to 1
-    if (semctl(sem_id, 0, SETVAL, sem_union) == -1)
-    {
-        perror("semctl failed");
-        return 1;
-    }
-
     // Create a semaphore for synchronization
-    int sync_sem_id = semget(SEMAPHORE_KEY_2, 1, 0666 | IPC_CREAT);
+    int sync_sem_id = semget(SEMAPHORE_KEY_1, 1, 0666 | IPC_CREAT);
     if (sync_sem_id == -1)
     {
         perror("semget failed for sync semaphore");
         return 1;
     }
 
+    union semun sem_union;
     sem_union.val = 0; // Initialize semaphore to 0
     if (semctl(sync_sem_id, 0, SETVAL, sem_union) == -1)
     {
         perror("semctl failed for sync semaphore");
+        return 1;
+    }
+
+    // Create a semaphore for safety
+    int safety_sem_id = semget(SEMAPHORE_KEY_2, 1, 0666 | IPC_CREAT);
+    if (safety_sem_id == -1)
+    {
+        perror("semget failed for safety semaphore");
+        return 1;
+    }
+
+    sem_union.val = 0; // Initialize semaphore to 0
+    if (semctl(safety_sem_id, 0, SETVAL, sem_union) == -1)
+    {
+        perror("semctl failed for safety semaphore");
+        return 1;
+    }
+
+    // Create a semaphore for mutual exclusion
+    int mutex_sem_id = semget(SEMAPHORE_KEY_3, 1, 0666 | IPC_CREAT);
+    if (mutex_sem_id == -1)
+    {
+        perror("semget failed for mutex semaphore");
+        return 1;
+    }
+
+    sem_union.val = 0; // Initialize semaphore to 0
+    if (semctl(mutex_sem_id, 0, SETVAL, sem_union) == -1)
+    {
+        perror("semctl failed for mutex semaphore");
         return 1;
     }
 
@@ -136,95 +151,97 @@ int main()
 
     for (int i = 0; i < NUMBER_OF_CHILDREN; i++)
     {
-        pid_t process_id = fork();
-        if (process_id == 0)
-        { // child process
-            if (bather_count < NUMBER_OF_BATHERS)
+        pid_t process_id;
+        process_id = fork(); // create a child process
+
+        if (process_id < 0) {
+            perror("fork failed");
+            exit(1);
+        }
+        if (process_id == 0) // child process
+        {
+            if (i < NUMBER_OF_BATHERS)
             {
-                bather_critical_section(bather_count + 1, sync_sem_id);
+                bather_count++;
+                bather_critical_section(i + 1, sync_sem_id, safety_sem_id, mutex_sem_id);
                 exit(0);
-            }
-            else if (process_id > 0)
-            {
-                if (boilerman_count < NUMBER_OF_BOILERMEN)
-                {
-                    boilerman_critical_section(boilerman_count + 1, sync_sem_id);
-                    exit(0);
-                }
             }
             else
             {
-                perror("fork failed");
-                exit(1);
+                boilerman_count++;
+                boilerman_critical_section(i - 2, sync_sem_id, safety_sem_id, mutex_sem_id);
+                exit(0);
             }
         }
     }
 
-    safeguard_critical_section(1, sync_sem_id);
+    safeguard_critical_section(1, sync_sem_id, safety_sem_id, mutex_sem_id); // parent process
 
     delete_semaphore(sync_sem_id);
-    delete_semaphore(sem_id);
+    //delete_semaphore(sem_id);
+    detach_shared_mem(p_shm);
+    delete_shared_mem(shm_id);
 
     return 0;
 }
 
-void bather_critical_section(int bather_id, int sync_sem_id)
+void bather_critical_section(int bather_id, int sync_sem_id, int safety_sem_id, int mutex_sem_id)
 {
+    // Wait for the parent to signal
+    sem_op(sync_sem_id, -1);
+    
     long int sleep_time;
-    while (false)
-    {
+    //while (false)
+    //{
         sleep_time = rand() % (BATHER_TIME_01_A + 1); // sleep_time between 0 and BATHER_TIME_01_A
         usleep(sleep_time);
 
-        // Wait for the parent to signal
-        sem_op(sync_sem_id, -1);
-
         //[your semaphore(s) here]
         // the critical section starts here -------------------
-        cout << "A % d is entering the swimming pool.." << bather_id << endl;
+        cout << "A" << bather_id << " is entering the swimming pool.." << endl;
 
         sleep_time = BATHER_TIME_02_B;
         usleep(sleep_time);
-        cout << "A % is leaving the swimming.." << bather_id << endl;
+        cout << "A" << bather_id << " is leaving the swimming.." << endl;
         //[your semaphore(s) here]
         // the critical section ends here --------------------
-    }
+    //}
 }
 
-void boilerman_critical_section(int boilerman_id, int sync_sem_id)
+void boilerman_critical_section(int boilerman_id, int sync_sem_id, int safety_sem_id, int mutex_sem_id)
 {
+    // Wait for the parent to signal
+    sem_op(sync_sem_id, -1);
+
     long int sleep_time;
     for (int i = 0; i < NUM_REPEAT; i++)
     {
         sleep_time = rand() % (BOILERMAN_TIME_01_A + 1); // sleep_time between 0 and BOILERMAN_TIME_01_A
         usleep(sleep_time);
 
-        // Wait for the parent to signal
-        sem_op(sync_sem_id, -1);
-
         // [your semaphore(s) here]
         // the critical section starts here -------------------
-        cout << "B % d starts his water heater.." << boilerman_id << endl;
-        sleep_time = BOILERMAN_TIME_01_B;
+        cout << "B" << boilerman_id << " starts his water heater.." << endl;
+        sleep_time = rand() % (BOILERMAN_TIME_01_B + 1); // sleep_time between 0 and BOILERMAN_TIME_01_B
         usleep(sleep_time);
-        cout << "B % d finishes water heating.." << boilerman_id << endl;
+        cout << "B" << boilerman_id << " finishes water heating.." << endl;
         //[your semaphore(s) here]
         // the critical section ends here --------------------
     }
 }
 
-void safeguard_critical_section(int safeguard_id, int sync_sem_id)
+void safeguard_critical_section(int safeguard_id, int sync_sem_id, int safety_sem_id, int mutex_sem_id)
 {
-    while (false)
+    // Signal all children to proceed
+    for (int i = 0; i < NUMBER_OF_CHILDREN; i++)
     {
+        sem_op(sync_sem_id, 1);
+    }
+    
+    //while (false)
+    //{
         int sleep_time = rand() % (SAFEGUARD_TIME_A + 1); // sleep_time between 0 and SAFEGUARD_TIME_A
         usleep(sleep_time);
-
-        // Signal all children to proceed
-        for (int i = 0; i < NUMBER_OF_CHILDREN; i++)
-        {
-            sem_op(sync_sem_id, 1);
-        }
 
         //[your semaphore(s) here]
         // the critical section starts here -------------------
@@ -235,18 +252,17 @@ void safeguard_critical_section(int safeguard_id, int sync_sem_id)
         cout << "S finishes inspection.." << endl;
         //[your semaphore(s) here]
         // the critical section ends here --------------------
-    }
+    //}
 }
 
-// Function to perform a semaphore operation (P or V)
-void sem_op(int sem_id, int op)
+void sem_op(int sem_id, short op)
 {
-    struct sembuf operations[1]; // Semaphore operation array
-    operations[0].sem_num = 0;   // Operating on the first semaphore in the set
-    operations[0].sem_op = op;   // -1 for P (wait), +1 for V (signal)
-    operations[0].sem_flg = 0;   // Default behavior (blocking)
+    struct sembuf operation[1];
+    operation[0].sem_num = 0;   // one semaphore in the set
+    operation[0].sem_op = op;   // -1 for P (wait), +1 for V (signal)
+    operation[0].sem_flg = 0;   // Default behavior (blocking)
 
-    if (semop(sem_id, operations, 1) == -1)
+    if (semop(sem_id, operation, 1) == -1)
     {
         perror("semop failed");
         exit(1);

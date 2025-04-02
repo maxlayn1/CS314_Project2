@@ -193,8 +193,7 @@ void bather_critical_section(int bather_id, int sync_sem_id, int SAFETY, int MUT
     sem_op(sync_sem_id, -1); // Wait for the parent to signal
     printf("A%d starts working now ...\n", bather_id);
 
-    while (p_shm->boiler_done_counter != NUMBER_OF_BOILERMEN) // bathers should not terminate until boilers do
-    {
+    do {
         int sleep_time;
         if (bather_id == 1) 
         {
@@ -243,7 +242,7 @@ void bather_critical_section(int bather_id, int sync_sem_id, int SAFETY, int MUT
         printf("\tA%d is leaving the swimming pool..\n", bather_id);
         sem_op(MUTEX, 1); // signal
         // the critical section ends here --------------------
-    }
+    } while (p_shm->boiler_done_counter != NUMBER_OF_BOILERMEN);
     printf("A%d is leaving the system ...\n", bather_id);
 }
 

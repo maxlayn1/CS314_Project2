@@ -40,8 +40,6 @@
 #define NUMBER_OF_BOILERMEN 2
 #define NUMBER_OF_CHILDREN 5
 
-#include <iostream>
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/types.h>
@@ -51,7 +49,6 @@
 // the followings are for shared memory / message queue----
 #include <sys/ipc.h>
 #include <sys/shm.h>
-#include <sys/msg.h>
 
 #include <stdio.h>     // for printf, rand
 #include <unistd.h>    // for sleep
@@ -60,8 +57,6 @@
 
 #include <semaphore.h>
 #include <sys/sem.h>
-
-using namespace std;
 
 // function prototypes
 void bather_critical_section(int bather_id, int sync_sem_id, int SAFETY, int MUTEX, struct my_mem *p_shm);
@@ -175,8 +170,8 @@ int main()
     }
 
     safeguard_critical_section(1, sync_sem_id, SAFETY, MUTEX, p_shm); // parent process
-    cout << "Now all five children have left ..." << endl;
-    cout << "Safeguard process deleting shared memory and will leave ..." << endl;
+    printf("Now all five children have left ...\n");
+    printf("Safeguard process deleting shared memory and will leave ...\n");
 
     delete_semaphore(sync_sem_id);
     delete_semaphore(SAFETY);
@@ -189,11 +184,11 @@ int main()
 
 void bather_critical_section(int bather_id, int sync_sem_id, int SAFETY, int MUTEX, struct my_mem *p_shm)
 {
-    cout << "A" << bather_id<< " is born ..." << endl;
-    cout << "A" << bather_id<< " is waiting for other children to be active ..." << endl;
+    printf("A%d is born ...\n", bather_id);
+    printf("A%d is waiting for other children to be active ...\n", bather_id);
     p_shm->ready_counter = p_shm->ready_counter + 1; // another child ready to begin
     sem_op(sync_sem_id, -1); // Wait for the parent to signal
-    cout << "A" << bather_id << " starts working now ..." << endl;
+    printf("A%d starts working now ...\n", bather_id);
 
     while (p_shm->boiler_done_counter != NUMBER_OF_BOILERMEN) // bathers should not terminate until boilers do
     {
@@ -204,7 +199,7 @@ void bather_critical_section(int bather_id, int sync_sem_id, int SAFETY, int MUT
             sem_op(SAFETY, -1); // wait
         }
         // the critical section starts here -------------------
-        cout << "A" << bather_id << " is entering the swimming pool.." << endl;
+        printf("A%d is entering the swimming pool..\n", bather_id);
         sem_op(MUTEX, 1); // signal
 
         long int sleep_time = rand() % (BATHER_TIME_02_B + 1); // sleep_time between 0 and BATHER_TIME_02_B
@@ -216,33 +211,33 @@ void bather_critical_section(int bather_id, int sync_sem_id, int SAFETY, int MUT
         {
             sem_op(SAFETY, 1); // signal
         }
-        cout << "\tA" << bather_id << " is leaving the swimming pool.." << endl;
+        printf("\tA%d is leaving the swimming pool..\n", bather_id);
         sem_op(MUTEX, 1); // signal
         // the critical section ends here --------------------
 
         // missing more delay????????????????????
     }
-    cout << "A" << bather_id << " is leaving the system ..." << endl;
+    printf("A%d is leaving the system ...\n", bather_id);
 }
 
 void boilerman_critical_section(int boilerman_id, int sync_sem_id, int SAFETY, int MUTEX, struct my_mem *p_shm)
 {
-    cout << "B" << boilerman_id << " is born ..." << endl;
-    cout << "B" << boilerman_id << " is waiting for other children to be active ..." << endl;
+    printf("B%d is born ...\n", boilerman_id);
+    printf("B%d is waiting for other children to be active ...\n", boilerman_id);
     p_shm->ready_counter = p_shm->ready_counter + 1; // another child ready to begin
     // Wait for the parent to signal
     sem_op(sync_sem_id, -1);
-    cout << "B" << boilerman_id << " starts working now ..." << endl;
+    printf("B%d starts working now ...\n", boilerman_id);
 
     for (int i = 0; i < NUM_REPEAT; i++)
     {
         // the critical section starts here -------------------
         sem_op(SAFETY, -1); // wait
 
-        cout << "B" << boilerman_id << " starts starts boiling the water." << endl;
+        printf("B%d starts starts boiling the water.\n", boilerman_id);
         long int sleep_time = rand() % (BOILERMAN_TIME_01_A + 1); // sleep_time between 0 and BOILERMAN_TIME_01_A
         usleep(sleep_time);
-        cout << "\tB" << boilerman_id << " finishes boiling water. Anyone can get in the pool." << endl;
+        printf("\tB%d finishes boiling water. Anyone can get in the pool.\n", boilerman_id);
 
         sem_op(SAFETY, 1); // signal
         // the critical section ends here --------------------
@@ -250,7 +245,7 @@ void boilerman_critical_section(int boilerman_id, int sync_sem_id, int SAFETY, i
         sleep_time = rand() % (BOILERMAN_TIME_01_B + 1); // sleep_time between 0 and BOILERMAN_TIME_01_B
         usleep(sleep_time);
     }
-    cout << "B" << boilerman_id << " is leaving the system ..." << endl;
+    printf("B%d is leaving the system ...\n", boilerman_id);
 }
 
 void safeguard_critical_section(int safeguard_id, int sync_sem_id, int SAFETY, int MUTEX, struct my_mem *p_shm)
@@ -259,7 +254,7 @@ void safeguard_critical_section(int safeguard_id, int sync_sem_id, int SAFETY, i
         usleep(100000);
     }
 
-    cout << "Now all five children are active!" << endl;
+    printf("Now all five children are active!\n");
     // Signal all children to proceed
     for (int i = 0; i < NUMBER_OF_CHILDREN; i++)
     {
@@ -271,10 +266,10 @@ void safeguard_critical_section(int safeguard_id, int sync_sem_id, int SAFETY, i
         // the critical section starts here -------------------
         sem_op(SAFETY, -1); // wait
 
-        cout << "S starts inspection. Everyone get out!!" << endl;
+        printf("S starts inspection. Everyone get out!!\n");
         int sleep_time = rand() % (SAFEGUARD_TIME_A + 1); // sleep_time between 0 and SAFEGUARD_TIME_A
         usleep(sleep_time);
-        cout << "\tS finishes inspection.." << endl;
+        printf("\tS finishes inspection..\n");
 
         sem_op(SAFETY, 1); // signal
         // the critical section ends here --------------------

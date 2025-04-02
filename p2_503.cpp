@@ -10,23 +10,23 @@
 
 #define NUM_REPEAT 10 // each boiler-man repeats
 
-#define BATHER_TIME_01_A 300000 // 300000us = 0.3 seconds
-#define BATHER_TIME_01_B 800000 // 800000us = 0.8 seconds
+#define BATHER_TIME_01_A 600000 
+#define BATHER_TIME_01_B 500000 
 
-#define BATHER_TIME_02_A 300000 // 300000us = 0.3 seconds
-#define BATHER_TIME_02_B 800000 // 800000us = 0.8 seconds
+#define BATHER_TIME_02_A 800000 
+#define BATHER_TIME_02_B 600000 
 
-#define BATHER_TIME_03_A 300000 // 300000us = 0.3 seconds
-#define BATHER_TIME_03_B 800000 // 800000us = 0.8 seconds
+#define BATHER_TIME_03_A 300000 
+#define BATHER_TIME_03_B 800000 
 
-#define BOILERMAN_TIME_01_A 1200000 // 1200000us = 1.2 seconds
-#define BOILERMAN_TIME_01_B 1600000 // 1600000us = 1.6 seconds
+#define BOILERMAN_TIME_01_A 1000000 
+#define BOILERMAN_TIME_01_B 1300000 
 
-#define BOILERMAN_TIME_02_A 1200000 // 1200000us = 1.2 seconds
-#define BOILERMAN_TIME_02_B 1600000 // 1600000us = 1.6 seconds
+#define BOILERMAN_TIME_02_A 1400000 
+#define BOILERMAN_TIME_02_B 1600000 
 
-#define SAFEGUARD_TIME_A 1200000 // 1200000us = 1.2 seconds
-#define SAFEGUARD_TIME_B 1600000 // 1600000us = 1.6 seconds
+#define SAFEGUARD_TIME_A 1100000 
+#define SAFEGUARD_TIME_B 1550000 
 
 #define SHARED_MEM_KEY_1 6380
 #define SHARED_MEM_KEY_2 6580
@@ -45,6 +45,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <ctime>
+#include <time.h> // Include for time(NULL)
 
 // the followings are for shared memory / message queue----
 #include <sys/ipc.h>
@@ -88,6 +89,8 @@ struct my_mem // shared memory definition
 
 int main()
 {
+    srand(time(NULL)); // Seed the random number generator
+
     int shm_id;           // the shared memory ID
     int shm_size;         // the size of the shared memoy
     struct my_mem *p_shm; // pointer to the attached shared memory
@@ -192,6 +195,21 @@ void bather_critical_section(int bather_id, int sync_sem_id, int SAFETY, int MUT
 
     while (p_shm->boiler_done_counter != NUMBER_OF_BOILERMEN) // bathers should not terminate until boilers do
     {
+        int sleep_time;
+        if (bather_id == 1) 
+        {
+            sleep_time = rand() % (BATHER_TIME_01_B + 1); // sleep_time between 0 and BATHER_TIME_01_B
+        }
+        else if (bather_id == 2)
+        {
+            sleep_time = rand() % (BATHER_TIME_02_B + 1); // sleep_time between 0 and BATHER_TIME_02_B
+        }
+        else 
+        {
+            sleep_time = rand() % (BATHER_TIME_03_B + 1); // sleep_time between 0 and BATHER_TIME_03_B
+        }
+        usleep(sleep_time);
+        
         sem_op(MUTEX, -1);                     // wait
         p_shm->ba_count = p_shm->ba_count + 1; // increment the number of bathers in the swimming pool
         if (p_shm->ba_count == 1)
@@ -202,7 +220,18 @@ void bather_critical_section(int bather_id, int sync_sem_id, int SAFETY, int MUT
         printf("A%d is entering the swimming pool..\n", bather_id);
         sem_op(MUTEX, 1); // signal
 
-        long int sleep_time = rand() % (BATHER_TIME_02_B + 1); // sleep_time between 0 and BATHER_TIME_02_B
+        if (bather_id == 1) 
+        {
+            sleep_time = rand() % (BATHER_TIME_01_A + 1); // sleep_time between 0 and BATHER_TIME_01_A
+        }
+        else if (bather_id == 2)
+        {
+            sleep_time = rand() % (BATHER_TIME_02_A + 1); // sleep_time between 0 and BATHER_TIME_02_A
+        }
+        else 
+        {
+            sleep_time = rand() % (BATHER_TIME_03_A + 1); // sleep_time between 0 and BATHER_TIME_03_A
+        }
         usleep(sleep_time);
 
         sem_op(MUTEX, -1);
@@ -214,8 +243,6 @@ void bather_critical_section(int bather_id, int sync_sem_id, int SAFETY, int MUT
         printf("\tA%d is leaving the swimming pool..\n", bather_id);
         sem_op(MUTEX, 1); // signal
         // the critical section ends here --------------------
-
-        // missing more delay????????????????????
     }
     printf("A%d is leaving the system ...\n", bather_id);
 }
@@ -235,14 +262,31 @@ void boilerman_critical_section(int boilerman_id, int sync_sem_id, int SAFETY, i
         sem_op(SAFETY, -1); // wait
 
         printf("B%d starts starts boiling the water.\n", boilerman_id);
-        long int sleep_time = rand() % (BOILERMAN_TIME_01_A + 1); // sleep_time between 0 and BOILERMAN_TIME_01_A
+
+        int sleep_time;
+        if (boilerman_id == 1)
+        {
+        sleep_time = rand() % (BOILERMAN_TIME_01_A + 1); // sleep_time between 0 and BOILERMAN_TIME_01_A
+        }
+        else
+        {
+        sleep_time = rand() % (BOILERMAN_TIME_02_A + 1); // sleep_time between 0 and BOILERMAN_TIME_02_A
+        }
         usleep(sleep_time);
+
         printf("\tB%d finishes boiling water. Anyone can get in the pool.\n", boilerman_id);
 
         sem_op(SAFETY, 1); // signal
         // the critical section ends here --------------------
 
+        if (boilerman_id == 1)
+        {
         sleep_time = rand() % (BOILERMAN_TIME_01_B + 1); // sleep_time between 0 and BOILERMAN_TIME_01_B
+        }
+        else
+        {
+        sleep_time = rand() % (BOILERMAN_TIME_02_B + 1); // sleep_time between 0 and BOILERMAN_TIME_02_B
+        }
         usleep(sleep_time);
     }
     printf("B%d is leaving the system ...\n", boilerman_id);
@@ -267,8 +311,10 @@ void safeguard_critical_section(int safeguard_id, int sync_sem_id, int SAFETY, i
         sem_op(SAFETY, -1); // wait
 
         printf("S starts inspection. Everyone get out!!\n");
+
         int sleep_time = rand() % (SAFEGUARD_TIME_A + 1); // sleep_time between 0 and SAFEGUARD_TIME_A
         usleep(sleep_time);
+
         printf("\tS finishes inspection..\n");
 
         sem_op(SAFETY, 1); // signal

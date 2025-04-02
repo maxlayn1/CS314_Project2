@@ -85,9 +85,10 @@ union semun
 
 struct my_mem // shared memory definition
 {
-    int ba_count;     // number of bathers in the swimming pool
-    int done_counter; // number of finished child processes
-    int boiler_done_counter; // number of finished boilermen
+    short ba_count;     // number of bathers in the swimming pool
+    short done_counter; // number of finished child processes
+    short boiler_done_counter; // number of finished boilermen
+    short ready_counter; // number of child processes ready to begin
 };
 
 int main()
@@ -174,6 +175,8 @@ int main()
     }
 
     safeguard_critical_section(1, sync_sem_id, SAFETY, MUTEX, p_shm); // parent process
+    cout << "Now all five children have left ..." << endl;
+    cout << "Safeguard process deleting shared memory and will leave ..." << endl;
 
     delete_semaphore(sync_sem_id);
     delete_semaphore(SAFETY);
@@ -188,6 +191,7 @@ void bather_critical_section(int bather_id, int sync_sem_id, int SAFETY, int MUT
 {
     cout << "A" << bather_id<< " is born ..." << endl;
     cout << "A" << bather_id<< " is waiting for other children to be active ..." << endl;
+    p_shm->ready_counter = p_shm->ready_counter + 1; // another child ready to begin
     sem_op(sync_sem_id, -1); // Wait for the parent to signal
     cout << "A" << bather_id << " starts working now ..." << endl;
 
@@ -218,12 +222,14 @@ void bather_critical_section(int bather_id, int sync_sem_id, int SAFETY, int MUT
 
         // missing more delay????????????????????
     }
+    cout << "A" << bather_id << " is leaving the system ..." << endl;
 }
 
 void boilerman_critical_section(int boilerman_id, int sync_sem_id, int SAFETY, int MUTEX, struct my_mem *p_shm)
 {
     cout << "B" << boilerman_id << " is born ..." << endl;
     cout << "B" << boilerman_id << " is waiting for other children to be active ..." << endl;
+    p_shm->ready_counter = p_shm->ready_counter + 1; // another child ready to begin
     // Wait for the parent to signal
     sem_op(sync_sem_id, -1);
     cout << "B" << boilerman_id << " starts working now ..." << endl;
@@ -233,10 +239,10 @@ void boilerman_critical_section(int boilerman_id, int sync_sem_id, int SAFETY, i
         // the critical section starts here -------------------
         sem_op(SAFETY, -1); // wait
 
-        cout << "B" << boilerman_id << " starts his water heater.." << endl;
+        cout << "B" << boilerman_id << " starts starts boiling the water." << endl;
         long int sleep_time = rand() % (BOILERMAN_TIME_01_A + 1); // sleep_time between 0 and BOILERMAN_TIME_01_A
         usleep(sleep_time);
-        cout << "B" << boilerman_id << " finishes water heating.." << endl;
+        cout << "\tB" << boilerman_id << " finishes boiling water. Anyone can get in the pool." << endl;
 
         sem_op(SAFETY, 1); // signal
         // the critical section ends here --------------------
@@ -244,16 +250,21 @@ void boilerman_critical_section(int boilerman_id, int sync_sem_id, int SAFETY, i
         sleep_time = rand() % (BOILERMAN_TIME_01_B + 1); // sleep_time between 0 and BOILERMAN_TIME_01_B
         usleep(sleep_time);
     }
+    cout << "B" << boilerman_id << " is leaving the system ..." << endl;
 }
 
 void safeguard_critical_section(int safeguard_id, int sync_sem_id, int SAFETY, int MUTEX, struct my_mem *p_shm)
 {
+    while (p_shm->ready_counter != 5) {
+        usleep(100000);
+    }
+
+    cout << "Now all five children are active!" << endl;
     // Signal all children to proceed
     for (int i = 0; i < NUMBER_OF_CHILDREN; i++)
     {
         sem_op(sync_sem_id, 1);
     }
-    cout << "Now all five children are active!" << endl;
 
     while (p_shm->done_counter != NUMBER_OF_CHILDREN)
     {
@@ -263,7 +274,7 @@ void safeguard_critical_section(int safeguard_id, int sync_sem_id, int SAFETY, i
         cout << "S starts inspection. Everyone get out!!" << endl;
         int sleep_time = rand() % (SAFEGUARD_TIME_A + 1); // sleep_time between 0 and SAFEGUARD_TIME_A
         usleep(sleep_time);
-        cout << "S finishes inspection.." << endl;
+        cout << "\tS finishes inspection.." << endl;
 
         sem_op(SAFETY, 1); // signal
         // the critical section ends here --------------------
@@ -292,10 +303,6 @@ void delete_semaphore(int sem_id)
     if (semctl(sem_id, 0, IPC_RMID, 0) == -1)
     {
         perror("semctl IPC_RMID failed");
-    }
-    else
-    {
-        cout << "Semaphore deleted successfully.\n";
     }
 }
 
@@ -333,6 +340,7 @@ struct my_mem *attach_shared_mem(int shm_id)
     p_shm->ba_count = 0;
     p_shm->done_counter = 0;
     p_shm->boiler_done_counter = 0;
+    p_shm->ready_counter = 0;
 
     return p_shm;
 }
